@@ -1,0 +1,11 @@
+'use strict';
+const {test}=require('node:test'),assert=require('node:assert/strict');
+const {auditHtml}=require('../src/seo-adsense-audit');
+const {classifyControl}=require('../src/interaction-policy');
+const {scrub,createNetworkMonitor}=require('../src/network-monitor');
+const {mergeReports,toHtml}=require('../src/report');
+test('SEO audit identifies missing essentials',()=>{const r=auditHtml('<html><body><h2>Welcome</h2><a href="#">Go</a></body></html>');assert.ok(r.findings.some(x=>x.code==='SEO_TITLE_MISSING'));assert.ok(r.findings.some(x=>x.code==='SEO_META_DESCRIPTION'));assert.ok(r.findings.some(x=>x.code==='PLACEHOLDER_NAV'))});
+test('SEO audit detects noindex and ad click incentives',()=>{const r=auditHtml('<html lang="en"><head><title>Example page</title><meta name="robots" content="noindex"></head><body><h1>Hi</h1>Please click ads</body></html>');assert.ok(r.findings.some(x=>x.code==='SEO_NOINDEX'));assert.ok(r.findings.some(x=>x.code==='ADSENSE_CLICK_INCENTIVE'))});
+test('safe interaction classifier excludes destructive controls',()=>{assert.equal(classifyControl({tag:'button',text:'Delete account'}).safe,false);assert.equal(classifyControl({tag:'a',href:'/about',text:'About'}).safe,true)});
+test('network monitor strips secrets and records failures',()=>{assert.equal(scrub('https://me:secret@example.com/a?token=123#x'),'https://example.com/a');const m=createNetworkMonitor();m.ingest('Network.requestWillBeSent',{requestId:'1',request:{url:'https://example.com/api?token=secret'}});m.ingest('Network.loadingFailed',{requestId:'1',errorText:'net::ERR_FAILED'});assert.equal(m.getFindings().length,1);assert.ok(!JSON.stringify(m.getFindings()).includes('secret'))});
+test('merged HTML report escapes untrusted error strings',()=>{const r=mergeReports({capturedErrors:[{message:'<script>alert(1)</script>',url:'http://localhost'}]});assert.ok(toHtml(r).includes('&lt;script&gt;'));assert.equal(r.summary.errors,1)});
