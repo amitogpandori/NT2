@@ -1,0 +1,877 @@
+================================================================================
+APPLAB AI STUDIO — v1.1.0
+Complete AI-Powered Desktop Development Environment
+Copyright © 2025 APPLAB. MIT License.
+================================================================================
+
+HOW TO EXTRACT THIS PROJECT
+---------------------------
+This single .txt file contains an entire source tree. Each file starts with a
+line of the form:
+
+    === FILE: relative/path/to/file ===
+
+and ends at the next such marker (or EOF). Extract with Python:
+
+    python -c "
+import re,os,sys
+src=open('applab-ai-studio.txt','r',encoding='utf-8').read()
+for m in re.finditer(r'=== FILE: (.+?) ===\n(.*?)(?=\n=== FILE: |\Z)',src,re.S):
+    p,c=m.group(1),m.group(2)
+    os.makedirs(os.path.dirname(p) or '.',exist_ok=True)
+    open(p,'w',encoding='utf-8',newline='\n').write(c.rstrip()+'\n')
+    print('wrote',p)
+"
+
+Then:
+
+    npm install
+    npm run electron:dev      # dev
+    npm run build:win         # Windows installer
+
+Prerequisites: Node 20+, Ollama running on http://127.0.0.1:11434
+Pull at least one model:  ollama pull llama3.2
+
+================================================================================
+=== FILE: package.json ===
+{
+  "name": "applab-ai-studio",
+  "version": "1.1.0",
+  "description": "AI-Powered Desktop Development Environment",
+  "main": "dist-electron/main.js",
+  "author": "APPLAB",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "build": "tsc --noEmit && vite build && electron-builder",
+    "build:win": "npm run build -- --win nsis",
+    "build:mac": "npm run build -- --mac dmg",
+    "build:linux": "npm run build -- --linux AppImage deb",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run",
+    "postinstall": "electron-rebuild -f -w node-pty"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "chokidar": "^3.6.0",
+    "electron-log": "^5.2.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "monaco-editor": "^0.50.0",
+    "node-pty": "^1.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "simple-git": "^3.27.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "concurrently": "^9.0.1",
+    "electron": "^32.1.2",
+    "electron-builder": "^25.1.7",
+    "electron-rebuild": "^3.2.9",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "vite-plugin-electron": "^0.28.8",
+    "vitest": "^2.1.2",
+    "wait-on": "^8.0.1"
+  }
+}
+
+================================================================================
+=== FILE: tsconfig.json ===
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  },
+  "include": ["src", "electron"],
+  "exclude": ["dist", "dist-electron", "release", "node_modules"]
+}
+
+================================================================================
+=== FILE: vite.config.ts ===
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import electron from 'vite-plugin-electron';
+import path from 'node:path';
+
+const externals = [
+  'node-pty', 'chokidar', 'electron-store', 'simple-git',
+  'electron-updater', 'electron-log',
+];
+
+export default defineConfig({
+  plugins: [
+    react(),
+    electron([
+      {
+        entry: 'electron/main.ts',
+        onstart({ startup }) {
+          startup(['.', '--no-sandbox']);
+        },
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: { external: externals },
+          },
+        },
+      },
+      {
+        entry: 'electron/preload.ts',
+        onstart({ reload }) { reload(); },
+        vite: { build: { outDir: 'dist-electron' } },
+      },
+    ]),
+  ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 2000,
+  },
+  resolve: {
+    alias: { '@': path.resolve(__dirname, 'src') },
+  },
+  server: { port: 5173, strictPort: true },
+  optimizeDeps: { exclude: ['monaco-editor'] },
+});
+
+================================================================================
+=== FILE: electron-builder.yml ===
+appId: com.applab.aistudio
+productName: APPLAB AI Studio
+copyright: Copyright © 2025 APPLAB
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - resources/**/*
+  - package.json
+
+extraResources:
+  - from: resources
+    to: resources
+
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+
+publish:
+  provider: github
+  owner: applab
+  repo: applab-ai-studio
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  artifactName: ${productName}-Setup-${version}.${ext}
+  # codeSigningHashAlgorithm: sha256
+  # certificateFile: build/cert.pfx
+  # certificatePassword: ${env.CSC_KEY_PASSWORD}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: APPLAB AI Studio
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # notarize: true   # requires APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD env vars
+
+linux:
+  target: [AppImage, deb]
+  icon: resources/icon.png
+  category: Development
+
+================================================================================
+=== FILE: electron/main.ts ===
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
+import path from 'node:path';
+import log from 'electron-log';
+import { autoUpdater } from 'electron-updater';
+import { registerFsHandlers } from './ipc/fs';
+import { registerOllamaHandlers } from './ipc/ollama';
+import { registerTerminalHandlers } from './ipc/terminal';
+import { registerProjectHandlers } from './ipc/project';
+import { registerSearchHandlers } from './ipc/search';
+import { registerGitHandlers } from './ipc/git';
+
+const isDev = !app.isPackaged;
+let mainWindow: BrowserWindow | null = null;
+
+log.transports.file.level = 'info';
+log.transports.console.level = isDev ? 'debug' : 'warn';
+
+function send(channel: string, ...args: unknown[]) {
+  mainWindow?.webContents.send(channel, ...args);
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1500,
+    height: 950,
+    minWidth: 1100,
+    minHeight: 700,
+    backgroundColor: '#0d1117',
+    show: false,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webSecurity: true,
+      spellcheck: false,
+    },
+    icon: path.join(__dirname, '../resources/icon.ico'),
+  });
+
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    const devUrl = 'http://localhost:5173';
+    const fileUrl = 'file://';
+    if (!url.startsWith(devUrl) && !url.startsWith(fileUrl)) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    log.error('Renderer gone:', details);
+    dialog.showErrorBox(
+      'APPLAB AI Studio crashed',
+      'The UI process stopped unexpectedly. Restarting is recommended.'
+    );
+  });
+
+  mainWindow.on('closed', () => (mainWindow = null));
+}
+
+function buildMenu() {
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Open Folder…', accelerator: 'CmdOrCtrl+O', click: () => send('menu:openFolder') },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => send('menu:palette') },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('menu:sidebar') },
+        { label: 'Toggle AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: () => send('menu:chat') },
+        { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('menu:terminal') },
+        { type: 'separator' },
+        { role: 'reload' }, { role: 'toggleDevTools' }, { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'AI',
+      submenu: [
+        { label: 'Ask About Current File', accelerator: 'CmdOrCtrl+I', click: () => send('menu:ask') },
+        { label: 'Explain Selection', click: () => send('menu:explain') },
+        { label: 'Refactor Selection', click: () => send('menu:refactor') },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify() },
+        { label: 'Ollama Website', click: () => shell.openExternal('https://ollama.com') },
+        { label: 'About', click: () => {
+          dialog.showMessageBox({
+            type: 'info', title: 'APPLAB AI Studio',
+            message: `APPLAB AI Studio v${app.getVersion()}`,
+            detail: 'An AI-powered desktop development environment.',
+          });
+        } },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+app.whenReady().then(() => {
+  registerFsHandlers(ipcMain);
+  registerOllamaHandlers(ipcMain);
+  registerTerminalHandlers(ipcMain);
+  registerProjectHandlers(ipcMain);
+  registerSearchHandlers(ipcMain);
+  registerGitHandlers(ipcMain);
+
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return res.canceled ? null : res.filePaths[0];
+  });
+
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  }));
+
+  buildMenu();
+  createWindow();
+
+  if (!isDev) {
+    autoUpdater.autoDownload = false;
+    autoUpdater.on('update-available', (info) => send('update:available', info));
+    autoUpdater.on('error', (e) => log.warn('updater', e));
+    autoUpdater.checkForUpdatesAndNotify().catch(() => {});
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+process.on('uncaughtException', (e) => log.error('uncaught', e));
+process.on('unhandledRejection', (e) => log.error('unhandledRejection', e));
+
+================================================================================
+=== FILE: electron/preload.ts ===
+import { contextBridge, ipcRenderer } from 'electron';
+
+type Unsub = () => void;
+
+const api = {
+  app: {
+    info: () => ipcRenderer.invoke('app:info'),
+    onMenu: (cb: (action: string) => void): Unsub => {
+      const handler = (_e: unknown, action: string) => cb(action);
+      ipcRenderer.on('menu:*', handler);
+      const channels = ['openFolder', 'save', 'palette', 'sidebar', 'chat', 'terminal', 'ask', 'explain', 'refactor'];
+      const wrapped: Array<[string, (...a: any[]) => void]> = [];
+      channels.forEach((c) => {
+        const ch = `menu:${c}`;
+        const h = () => cb(c);
+        ipcRenderer.on(ch, h);
+        wrapped.push([ch, h]);
+      });
+      return () => {
+        ipcRenderer.removeListener('menu:*', handler);
+        wrapped.forEach(([ch, h]) => ipcRenderer.removeListener(ch, h));
+      };
+    },
+  },
+  fs: {
+    readDir: (p: string) => ipcRenderer.invoke('fs:readDir', p),
+    readFile: (p: string) => ipcRenderer.invoke('fs:readFile', p),
+    writeFile: (p: string, c: string) => ipcRenderer.invoke('fs:writeFile', p, c),
+    createFile: (p: string) => ipcRenderer.invoke('fs:createFile', p),
+    createDir: (p: string) => ipcRenderer.invoke('fs:createDir', p),
+    delete: (p: string) => ipcRenderer.invoke('fs:delete', p),
+    rename: (o: string, n: string) => ipcRenderer.invoke('fs:rename', o, n),
+    watch: (p: string, cb: (evt: string, file: string) => void): Unsub => {
+      const channel = `fs:watch:${p}`;
+      const handler = (_e: unknown, evt: string, file: string) => cb(evt, file);
+      ipcRenderer.on(channel, handler);
+      ipcRenderer.send('fs:watch:start', p);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+        ipcRenderer.send('fs:watch:stop', p);
+      };
+    },
+  },
+  dialog: {
+    openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+  },
+  ollama: {
+    health: () => ipcRenderer.invoke('ollama:health'),
+    list: () => ipcRenderer.invoke('ollama:list'),
+    chat: (payload: unknown) => ipcRenderer.invoke('ollama:chat', payload),
+    stream: (
+      payload: any,
+      onChunk: (c: string) => void,
+      onDone: () => void,
+      onError?: (e: string) => void
+    ): Unsub => {
+      const id = (crypto as any).randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2);
+      const chunkCh = `ollama:chunk:${id}`;
+      const doneCh = `ollama:done:${id}`;
+      const errCh = `ollama:error:${id}`;
+
+      const onChunkH = (_e: unknown, c: string) => onChunk(c);
+      const onDoneH = () => { onDone(); cleanup(); };
+      const onErrH = (_e: unknown, msg: string) => { onError?.(msg); cleanup(); };
+
+      const cleanup = () => {
+        ipcRenderer.removeListener(chunkCh, onChunkH);
+        ipcRenderer.removeListener(doneCh, onDoneH);
+        ipcRenderer.removeListener(errCh, onErrH);
+      };
+
+      ipcRenderer.on(chunkCh, onChunkH);
+      ipcRenderer.on(doneCh, onDoneH);
+      ipcRenderer.on(errCh, onErrH);
+
+      ipcRenderer.send('ollama:stream', { ...payload, id });
+      return () => {
+        cleanup();
+        ipcRenderer.send('ollama:abort', id);
+      };
+    },
+  },
+  terminal: {
+    create: (id: string, cwd: string) => ipcRenderer.invoke('term:create', id, cwd),
+    write: (id: string, data: string) => ipcRenderer.send('term:write', id, data),
+    resize: (id: string, cols: number, rows: number) =>
+      ipcRenderer.send('term:resize', id, cols, rows),
+    onData: (id: string, cb: (d: string) => void): Unsub => {
+      const ch = `term:data:${id}`;
+      const h = (_e: unknown, d: string) => cb(d);
+      ipcRenderer.on(ch, h);
+      return () => ipcRenderer.removeListener(ch, h);
+    },
+    kill: (id: string) => ipcRenderer.send('term:kill', id),
+  },
+  project: {
+    save: (data: unknown) => ipcRenderer.invoke('project:save', data),
+    load: () => ipcRenderer.invoke('project:load'),
+    list: () => ipcRenderer.invoke('project:list'),
+    saveChat: (workspace: string, messages: unknown) =>
+      ipcRenderer.invoke('project:saveChat', workspace, messages),
+    loadChat: (workspace: string) =>
+      ipcRenderer.invoke('project:loadChat', workspace),
+  },
+  search: {
+    inWorkspace: (root: string, query: string, opts?: unknown) =>
+      ipcRenderer.invoke('search:inWorkspace', root, query, opts),
+  },
+  git: {
+    status: (root: string) => ipcRenderer.invoke('git:status', root),
+    diff: (root: string, file: string) => ipcRenderer.invoke('git:diff', root, file),
+  },
+  on: (channel: string, cb: (...args: any[]) => void): Unsub => {
+    const h = (_e: unknown, ...args: any[]) => cb(...args);
+    ipcRenderer.on(channel, h);
+    return () => ipcRenderer.removeListener(channel, h);
+  },
+};
+
+contextBridge.exposeInMainWorld('applab', api);
+
+export type AppLabAPI = typeof api;
+
+================================================================================
+=== FILE: electron/ipc/fs.ts ===
+import type { IpcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import chokidar, { type FSWatcher } from 'chokidar';
+
+const watchers = new Map<string, FSWatcher>();
+const IGNORE = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '__pycache__',
+  '.venv', 'venv', '.idea', '.vscode', 'target', 'out', '.cache',
+  '.turbo', 'coverage', '.pytest_cache', '.mypy_cache',
+]);
+
+const MAX_READ = 10 * 1024 * 1024;
+
+function isIgnored(p: string) {
+  return p.split(/[\\/]/).some((seg) => IGNORE.has(seg));
+}
+
+export function registerFsHandlers(ipc: IpcMain) {
+  ipc.handle('fs:readDir', async (_e, dir: string) => {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const result = await Promise.all(
+      entries
+        .filter((e) => !IGNORE.has(e.name))
+        .map(async (e) => {
+          const full = path.join(dir, e.name);
+          let size = 0, mtime = 0;
+          try {
+            const st = await fs.stat(full);
+            size = st.size;
+            mtime = st.mtimeMs;
+          } catch {}
+          return { name: e.name, path: full, isDirectory: e.isDirectory(), size, mtime };
+        })
+    );
+    return result.sort((a, b) =>
+      a.isDirectory === b.isDirectory
+        ? a.name.localeCompare(b.name)
+        : a.isDirectory ? -1 : 1
+    );
+  });
+
+  ipc.handle('fs:readFile', async (_e, p: string) => {
+    const st = await fs.stat(p);
+    if (st.size > MAX_READ) throw new Error(`File too large (>${MAX_READ / 1024 / 1024}MB)`);
+    return fs.readFile(p, 'utf-8');
+  });
+
+  ipc.handle('fs:writeFile', async (_e, p: string, content: string) => {
+    const dir = path.dirname(p);
+    await fs.mkdir(dir, { recursive: true });
+    const tmp = `${p}.tmp-${process.pid}`;
+    await fs.writeFile(tmp, content, 'utf-8');
+    await fs.rename(tmp, p);
+    return true;
+  });
+
+  ipc.handle('fs:createFile', async (_e, p: string) => {
+    await fs.writeFile(p, '', { flag: 'wx' });
+    return true;
+  });
+
+  ipc.handle('fs:createDir', async (_e, p: string) => {
+    await fs.mkdir(p, { recursive: true });
+    return true;
+  });
+
+  ipc.handle('fs:delete', async (_e, p: string) => {
+    await fs.rm(p, { recursive: true, force: true });
+    return true;
+  });
+
+  ipc.handle('fs:rename', async (_e, oldP: string, newP: string) => {
+    await fs.rename(oldP, newP);
+    return true;
+  });
+
+  ipc.on('fs:watch:start', (e, dir: string) => {
+    if (watchers.has(dir)) return;
+    const w = chokidar.watch(dir, {
+      ignored: (p) => isIgnored(p),
+      ignoreInitial: true,
+      depth: 10,
+      awaitWriteFinish: { stabilityThreshold: 150 },
+    });
+    w.on('all', (evt, file) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`fs:watch:${dir}`, evt, file);
+    });
+    watchers.set(dir, w);
+  });
+
+  ipc.on('fs:watch:stop', (_e, dir: string) => {
+    watchers.get(dir)?.close();
+    watchers.delete(dir);
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/ollama.ts ===
+import type { IpcMain } from 'electron';
+import http from 'node:http';
+
+const OLLAMA = 'http://127.0.0.1:11434';
+const activeRequests = new Map<string, http.ClientRequest>();
+
+function request(url: string, method: string, body?: unknown): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method,
+        timeout: 5000,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch { resolve(data); }
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Ollama request timed out')));
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+export function registerOllamaHandlers(ipc: IpcMain) {
+  ipc.handle('ollama:health', async () => {
+    try {
+      await request(`${OLLAMA}/api/tags`, 'GET');
+      return { ok: true, url: OLLAMA };
+    } catch (e: unknown) {
+      return { ok: false, url: OLLAMA, error: (e as Error).message };
+    }
+  });
+
+  ipc.handle('ollama:list', async () => {
+    try {
+      const res = await request(`${OLLAMA}/api/tags`, 'GET');
+      return res.models ?? [];
+    } catch {
+      return [];
+    }
+  });
+
+  ipc.handle('ollama:chat', async (_e, payload: any) => {
+    return request(`${OLLAMA}/api/chat`, 'POST', {
+      model: payload.model,
+      messages: payload.messages,
+      stream: false,
+      options: { temperature: payload.temperature ?? 0.7 },
+    });
+  });
+
+  ipc.on('ollama:stream', (e, payload: any) => {
+    const u = new URL(`${OLLAMA}/api/chat`);
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      (res) => {
+        let buf = '';
+        res.on('data', (chunk: Buffer) => {
+          buf += chunk.toString('utf-8');
+          const lines = buf.split('\n');
+          buf = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const obj = JSON.parse(line);
+              if (obj.message?.content && !e.sender.isDestroyed()) {
+                e.sender.send(`ollama:chunk:${payload.id}`, obj.message.content);
+              }
+              if (obj.done && !e.sender.isDestroyed()) {
+                e.sender.send(`ollama:done:${payload.id}`);
+                activeRequests.delete(payload.id);
+              }
+            } catch { /* partial line */ }
+          }
+        });
+        res.on('end', () => {
+          if (!e.sender.isDestroyed()) e.sender.send(`ollama:done:${payload.id}`);
+          activeRequests.delete(payload.id);
+        });
+      }
+    );
+    req.on('error', (err) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`ollama:error:${payload.id}`, err.message);
+      activeRequests.delete(payload.id);
+    });
+    req.write(
+      JSON.stringify({
+        model: payload.model,
+        messages: payload.messages,
+        stream: true,
+        options: { temperature: payload.temperature ?? 0.7 },
+      })
+    );
+    req.end();
+    activeRequests.set(payload.id, req);
+  });
+
+  ipc.on('ollama:abort', (_e, id: string) => {
+    activeRequests.get(id)?.destroy();
+    activeRequests.delete(id);
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/terminal.ts ===
+import type { IpcMain } from 'electron';
+import * as pty from 'node-pty';
+import os from 'node:os';
+import fs from 'node:fs';
+
+const terminals = new Map<string, pty.IPty>();
+
+function pickShell(): string {
+  if (process.platform === 'win32') {
+    const candidates = [
+      process.env.COMSPEC,
+      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+    ].filter(Boolean) as string[];
+    for (const c of candidates) {
+      try { if (fs.existsSync(c)) return c; } catch {}
+    }
+    return process.env.COMSPEC || 'powershell.exe';
+  }
+  return process.env.SHELL || '/bin/bash';
+}
+
+export function registerTerminalHandlers(ipc: IpcMain) {
+  ipc.handle('term:create', (e, id: string, cwd: string) => {
+    if (terminals.has(id)) return true;
+    let safeCwd = cwd || os.homedir();
+    try { if (!fs.existsSync(safeCwd)) safeCwd = os.homedir(); } catch { safeCwd = os.homedir(); }
+
+    const p = pty.spawn(pickShell(), [], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: safeCwd,
+      env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
+    });
+
+    p.onData((d) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`term:data:${id}`, d);
+    });
+    p.onExit(({ exitCode }) => {
+      terminals.delete(id);
+      if (!e.sender.isDestroyed()) {
+        e.sender.send(`term:data:${id}`, `\r\n[process exited with code ${exitCode}]\r\n`);
+      }
+    });
+
+    terminals.set(id, p);
+    return true;
+  });
+
+  ipc.on('term:write', (_e, id: string, data: string) => {
+    terminals.get(id)?.write(data);
+  });
+
+  ipc.on('term:resize', (_e, id: string, cols: number, rows: number) => {
+    try { terminals.get(id)?.resize(Math.max(2, cols), Math.max(2, rows)); } catch {}
+  });
+
+  ipc.on('term:kill', (_e, id: string) => {
+    try { terminals.get(id)?.kill(); } catch {}
+    terminals.delete(id);
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/project.ts ===
+import type { IpcMain } from 'electron';
+import Store from 'electron-store';
+
+interface Project { id: string; name: string; path: string; lastOpened: number; }
+interface Schema {
+  projects: Project[];
+  recent: Project | null;
+  chats: Record<string, unknown>;
+  settings: Record<string, unknown>;
+}
+
+const store = new Store<Schema>({
+  name: 'applab-data',
+  defaults: { projects: [], recent: null, chats: {}, settings: {} },
+});
+
+export function registerProjectHandlers(ipc: IpcMain) {
+  ipc.handle('project:save', (_e, data: Project) => {
+    const projects = store.get('projects');
+    const idx = projects.findIndex((p) => p.id === data.id);
+    if (idx >= 0) projects[idx] = data;
+    else projects.push(data);
+    store.set('projects', projects);
+    store.set('recent', data);
+    return true;
+  });
+
+  ipc.handle('project:list', () => store.get('projects'));
+  ipc.handle('project:load', () => store.get('recent'));
+
+  ipc.handle('project:saveChat', (_e, workspace: string, messages: unknown) => {
+    const chats = store.get('chats');
+    chats[workspace] = messages;
+    store.set('chats', chats);
+    return true;
+  });
+
+  ipc.handle('project:loadChat', (_e, workspace: string) => {
+    const chats = store.get('chats');
+    return chats[workspace] ?? [];
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/search.ts ===
+import type { IpcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const IGNORE = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '__pycache__',
+  '.venv', 'venv', '.idea', '.vscode', 'target', 'out', '.cache',
+  'coverage', '.turbo',
+]);
+const TEXT_EXT = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt',
+  '.html', '.css', '.scss', '.less', '.py', '.rb', '.go', '.rs', '.java',
+  '.kt', '.swift', '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.sh',
+  '.yml', '.yaml', '.toml', '.ini', '.env', '.sql', '.vue', '.svelte',
+]);
+const MAX_FILE = 1 * 1024 * 1024;
+const MAX_RESULTS = 500;
+
+interface Hit { file: string; line: number; text: string; }
+
+async function walk(
+  dir
