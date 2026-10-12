@@ -1,0 +1,2394 @@
+================================================================================
+APPLAB AI STUDIO v1.1.0
+Complete AI-Powered Desktop Development Environment
+MIT License
+================================================================================
+
+EXTRACT:
+    python -c "
+import re,os
+src=open('applab-ai-studio.txt',encoding='utf-8').read()
+for m in re.finditer(r'=== FILE: (.+?) ===\n(.*?)(?=\n=== FILE: |\Z)',src,re.S):
+    p,c=m.group(1),m.group(2).rstrip()+'\n'
+    os.makedirs(os.path.dirname(p) or '.',exist_ok=True)
+    open(p,'w',encoding='utf-8',newline='\n').write(c)
+    print('wrote',p)
+"
+
+RUN:
+    npm install
+    npm run electron:dev
+
+BUILD WINDOWS EXE LOCALLY:
+    npm run build:win     ->  release/APPLAB AI Studio-Setup-1.1.0.exe
+
+BUILD VIA GITHUB:
+    git tag v1.1.0 && git push origin v1.1.0
+    CI builds .exe and attaches to a draft Release.
+
+PREREQUISITES:
+    Node 20+
+    Ollama running at http://127.0.0.1:11434
+    At least one model pulled:  ollama pull llama3.2
+
+================================================================================
+=== FILE: package.json ===
+{
+  "name": "applab-ai-studio",
+  "version": "1.1.0",
+  "description": "AI-Powered Desktop Development Environment",
+  "main": "dist-electron/main.js",
+  "author": "APPLAB",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "build": "vite build && electron-builder",
+    "build:win": "npm run build -- --win nsis",
+    "build:mac": "npm run build -- --mac dmg",
+    "build:linux": "npm run build -- --linux AppImage deb",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "electron-rebuild -f -w node-pty"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.6.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-search": "^0.15.0",
+    "@xterm/addon-web-links": "^0.11.0",
+    "@xterm/xterm": "^5.5.0",
+    "chokidar": "^3.6.0",
+    "electron-log": "^5.2.0",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "monaco-editor": "^0.50.0",
+    "node-pty": "^1.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "simple-git": "^3.27.0",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.10",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "concurrently": "^9.0.1",
+    "electron": "^32.1.2",
+    "electron-builder": "^25.1.7",
+    "electron-rebuild": "^3.2.9",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "vite-plugin-electron": "^0.28.8",
+    "wait-on": "^8.0.1"
+  }
+}
+
+================================================================================
+=== FILE: tsconfig.json ===
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/*"] }
+  },
+  "include": ["src", "electron"],
+  "exclude": ["dist", "dist-electron", "release", "node_modules"]
+}
+
+================================================================================
+=== FILE: vite.config.ts ===
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import electron from 'vite-plugin-electron';
+import path from 'node:path';
+
+const externals = [
+  'node-pty', 'chokidar', 'electron-store', 'simple-git',
+  'electron-updater', 'electron-log',
+];
+
+export default defineConfig({
+  plugins: [
+    react(),
+    electron([
+      {
+        entry: 'electron/main.ts',
+        onstart({ startup }) {
+          startup(['.', '--no-sandbox']);
+        },
+        vite: {
+          build: {
+            outDir: 'dist-electron',
+            rollupOptions: { external: externals },
+          },
+        },
+      },
+      {
+        entry: 'electron/preload.ts',
+        onstart({ reload }) { reload(); },
+        vite: { build: { outDir: 'dist-electron' } },
+      },
+    ]),
+  ],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    chunkSizeWarningLimit: 2000,
+  },
+  resolve: {
+    alias: { '@': path.resolve(__dirname, 'src') },
+  },
+  server: { port: 5173, strictPort: true },
+  optimizeDeps: { exclude: ['monaco-editor'] },
+});
+
+================================================================================
+=== FILE: electron-builder.yml ===
+appId: com.applab.aistudio
+productName: APPLAB AI Studio
+copyright: Copyright (c) 2025 APPLAB
+
+directories:
+  output: release
+  buildResources: resources
+
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - resources/**/*
+  - package.json
+
+extraResources:
+  - from: resources
+    to: resources
+
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+
+publish:
+  provider: github
+  owner: your-username
+  repo: applab-ai-studio
+  releaseType: draft
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.ico
+  artifactName: ${productName}-Setup-${version}.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: APPLAB AI Studio
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+
+linux:
+  target: [AppImage, deb]
+  icon: resources/icon.png
+  category: Development
+
+================================================================================
+=== FILE: .gitignore ===
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.DS_Store
+.env
+.vite/
+
+================================================================================
+=== FILE: .github/workflows/build.yml ===
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: --win nsis
+          - os: ubuntu-latest
+            args: --linux AppImage
+          - os: macos-latest
+            args: --mac dmg
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install system deps (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbfile-dev
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          npm_config_build_from_source: true
+
+      - name: Typecheck
+        run: npm run typecheck
+        continue-on-error: true
+
+      - name: Build & publish
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: applab-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.AppImage
+          if-no-files-found: ignore
+
+================================================================================
+=== FILE: resources/README.txt ===
+Place platform icons here:
+  icon.ico  (Windows, 256x256)
+  icon.icns (macOS)
+  icon.png  (Linux, 512x512)
+
+Placeholder icons are optional for a dev build; electron-builder will warn
+but still produce an installer.
+
+================================================================================
+=== FILE: index.html ===
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:11434 http://localhost:11434 ws://localhost:5173;" />
+    <title>APPLAB AI Studio</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+================================================================================
+=== FILE: electron/main.ts ===
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu } from 'electron';
+import path from 'node:path';
+import log from 'electron-log';
+import { autoUpdater } from 'electron-updater';
+import { registerFsHandlers } from './ipc/fs';
+import { registerOllamaHandlers } from './ipc/ollama';
+import { registerTerminalHandlers } from './ipc/terminal';
+import { registerProjectHandlers } from './ipc/project';
+import { registerSearchHandlers } from './ipc/search';
+import { registerGitHandlers } from './ipc/git';
+
+const isDev = !app.isPackaged;
+let mainWindow: BrowserWindow | null = null;
+
+log.transports.file.level = 'info';
+log.transports.console.level = isDev ? 'debug' : 'warn';
+
+function send(channel: string, ...args: unknown[]) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+  }
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1500,
+    height: 950,
+    minWidth: 1100,
+    minHeight: 700,
+    backgroundColor: '#0d1117',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      spellcheck: false,
+    },
+  });
+
+  mainWindow.once('ready-to-show', () => mainWindow?.show());
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+  }
+
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    const ok = url.startsWith('http://localhost:5173') || url.startsWith('file://');
+    if (!ok) {
+      e.preventDefault();
+      shell.openExternal(url);
+    }
+  });
+
+  mainWindow.on('closed', () => (mainWindow = null));
+}
+
+function buildMenu() {
+  const menu: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: 'File',
+      submenu: [
+        { label: 'Open Folder...', accelerator: 'CmdOrCtrl+O', click: () => send('menu:openFolder') },
+        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('menu:save') },
+        { type: 'separator' },
+        { role: 'quit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { label: 'Command Palette', accelerator: 'CmdOrCtrl+K', click: () => send('menu:palette') },
+        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+B', click: () => send('menu:sidebar') },
+        { label: 'Toggle AI Chat', accelerator: 'CmdOrCtrl+Shift+A', click: () => send('menu:chat') },
+        { label: 'Toggle Terminal', accelerator: 'CmdOrCtrl+`', click: () => send('menu:terminal') },
+        { type: 'separator' },
+        { role: 'reload' }, { role: 'toggleDevTools' }, { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'AI',
+      submenu: [
+        { label: 'Ask About Current File', accelerator: 'CmdOrCtrl+I', click: () => send('menu:ask') },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        { label: 'Check for Updates', click: () => autoUpdater.checkForUpdatesAndNotify() },
+        { label: 'Ollama Website', click: () => shell.openExternal('https://ollama.com') },
+        {
+          label: 'About',
+          click: () => dialog.showMessageBox({
+            type: 'info',
+            title: 'APPLAB AI Studio',
+            message: `APPLAB AI Studio v${app.getVersion()}`,
+            detail: 'An AI-powered desktop development environment.',
+          }),
+        },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menu));
+}
+
+app.whenReady().then(() => {
+  registerFsHandlers(ipcMain);
+  registerOllamaHandlers(ipcMain);
+  registerTerminalHandlers(ipcMain);
+  registerProjectHandlers(ipcMain);
+  registerSearchHandlers(ipcMain);
+  registerGitHandlers(ipcMain);
+
+  ipcMain.handle('dialog:openDirectory', async () => {
+    const res = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return res.canceled ? null : res.filePaths[0];
+  });
+
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  }));
+
+  buildMenu();
+  createWindow();
+
+  if (!isDev) {
+    autoUpdater.on('error', (e) => log.warn('updater', e));
+  }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+process.on('uncaughtException', (e) => log.error('uncaught', e));
+process.on('unhandledRejection', (e) => log.error('unhandledRejection', e));
+
+================================================================================
+=== FILE: electron/preload.ts ===
+import { contextBridge, ipcRenderer } from 'electron';
+
+type Unsub = () => void;
+
+const MENU_CHANNELS = [
+  'openFolder', 'save', 'palette', 'sidebar', 'chat', 'terminal', 'ask',
+] as const;
+
+const api = {
+  app: {
+    info: () => ipcRenderer.invoke('app:info'),
+    onMenu: (cb: (action: string) => void): Unsub => {
+      const subs: Array<[string, (...a: any[]) => void]> = [];
+      for (const c of MENU_CHANNELS) {
+        const ch = `menu:${c}`;
+        const h = () => cb(c);
+        ipcRenderer.on(ch, h);
+        subs.push([ch, h]);
+      }
+      return () => {
+        for (const [ch, h] of subs) ipcRenderer.removeListener(ch, h);
+      };
+    },
+  },
+
+  fs: {
+    readDir: (p: string) => ipcRenderer.invoke('fs:readDir', p),
+    readFile: (p: string) => ipcRenderer.invoke('fs:readFile', p),
+    writeFile: (p: string, c: string) => ipcRenderer.invoke('fs:writeFile', p, c),
+    createFile: (p: string) => ipcRenderer.invoke('fs:createFile', p),
+    createDir: (p: string) => ipcRenderer.invoke('fs:createDir', p),
+    delete: (p: string) => ipcRenderer.invoke('fs:delete', p),
+    rename: (o: string, n: string) => ipcRenderer.invoke('fs:rename', o, n),
+    watch: (p: string, cb: (evt: string, file: string) => void): Unsub => {
+      const channel = `fs:watch:${p}`;
+      const handler = (_e: unknown, evt: string, file: string) => cb(evt, file);
+      ipcRenderer.on(channel, handler);
+      ipcRenderer.send('fs:watch:start', p);
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+        ipcRenderer.send('fs:watch:stop', p);
+      };
+    },
+  },
+
+  dialog: {
+    openDirectory: () => ipcRenderer.invoke('dialog:openDirectory'),
+  },
+
+  ollama: {
+    health: () => ipcRenderer.invoke('ollama:health'),
+    list: () => ipcRenderer.invoke('ollama:list'),
+    chat: (payload: unknown) => ipcRenderer.invoke('ollama:chat', payload),
+    stream: (
+      payload: { model: string; messages: unknown[]; temperature?: number },
+      onChunk: (c: string) => void,
+      onDone: () => void,
+      onError?: (e: string) => void
+    ): Unsub => {
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      const chunkCh = `ollama:chunk:${id}`;
+      const doneCh = `ollama:done:${id}`;
+      const errCh = `ollama:error:${id}`;
+
+      let finished = false;
+
+      const cleanup = () => {
+        ipcRenderer.removeListener(chunkCh, onChunkH);
+        ipcRenderer.removeListener(doneCh, onDoneH);
+        ipcRenderer.removeListener(errCh, onErrH);
+      };
+      const onChunkH = (_e: unknown, c: string) => onChunk(c);
+      const onDoneH = () => { if (!finished) { finished = true; onDone(); cleanup(); } };
+      const onErrH = (_e: unknown, msg: string) => {
+        if (!finished) { finished = true; onError?.(msg); cleanup(); }
+      };
+
+      ipcRenderer.on(chunkCh, onChunkH);
+      ipcRenderer.on(doneCh, onDoneH);
+      ipcRenderer.on(errCh, onErrH);
+
+      ipcRenderer.send('ollama:stream', { ...payload, id });
+
+      return () => {
+        finished = true;
+        cleanup();
+        ipcRenderer.send('ollama:abort', id);
+      };
+    },
+  },
+
+  terminal: {
+    create: (id: string, cwd: string) => ipcRenderer.invoke('term:create', id, cwd),
+    write: (id: string, data: string) => ipcRenderer.send('term:write', id, data),
+    resize: (id: string, cols: number, rows: number) =>
+      ipcRenderer.send('term:resize', id, cols, rows),
+    onData: (id: string, cb: (d: string) => void): Unsub => {
+      const ch = `term:data:${id}`;
+      const h = (_e: unknown, d: string) => cb(d);
+      ipcRenderer.on(ch, h);
+      return () => ipcRenderer.removeListener(ch, h);
+    },
+    kill: (id: string) => ipcRenderer.send('term:kill', id),
+  },
+
+  project: {
+    save: (data: unknown) => ipcRenderer.invoke('project:save', data),
+    list: () => ipcRenderer.invoke('project:list'),
+    load: () => ipcRenderer.invoke('project:load'),
+    saveChat: (workspace: string, messages: unknown) =>
+      ipcRenderer.invoke('project:saveChat', workspace, messages),
+    loadChat: (workspace: string) =>
+      ipcRenderer.invoke('project:loadChat', workspace),
+  },
+
+  search: {
+    inWorkspace: (root: string, query: string, opts?: { max?: number }) =>
+      ipcRenderer.invoke('search:inWorkspace', root, query, opts),
+  },
+
+  git: {
+    status: (root: string) => ipcRenderer.invoke('git:status', root),
+    diff: (root: string, file: string) => ipcRenderer.invoke('git:diff', root, file),
+  },
+};
+
+contextBridge.exposeInMainWorld('applab', api);
+
+export type AppLabAPI = typeof api;
+
+================================================================================
+=== FILE: electron/ipc/fs.ts ===
+import type { IpcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import chokidar, { type FSWatcher } from 'chokidar';
+
+const watchers = new Map<string, FSWatcher>();
+
+const IGNORE = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '__pycache__',
+  '.venv', 'venv', '.idea', '.vscode', 'target', 'out', '.cache',
+  '.turbo', 'coverage', '.pytest_cache', '.mypy_cache',
+]);
+
+const MAX_READ = 10 * 1024 * 1024;
+
+function isIgnored(p: string) {
+  return p.split(/[\\/]/).some((seg) => IGNORE.has(seg));
+}
+
+export function registerFsHandlers(ipc: IpcMain) {
+  ipc.handle('fs:readDir', async (_e, dir: string) => {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    const result = await Promise.all(
+      entries
+        .filter((e) => !IGNORE.has(e.name))
+        .map(async (e) => {
+          const full = path.join(dir, e.name);
+          let size = 0, mtime = 0;
+          try {
+            const st = await fs.stat(full);
+            size = st.size;
+            mtime = st.mtimeMs;
+          } catch {}
+          return { name: e.name, path: full, isDirectory: e.isDirectory(), size, mtime };
+        })
+    );
+    return result.sort((a, b) =>
+      a.isDirectory === b.isDirectory
+        ? a.name.localeCompare(b.name)
+        : a.isDirectory ? -1 : 1
+    );
+  });
+
+  ipc.handle('fs:readFile', async (_e, p: string) => {
+    const st = await fs.stat(p);
+    if (st.size > MAX_READ) throw new Error(`File too large (>${MAX_READ / 1024 / 1024}MB)`);
+    return fs.readFile(p, 'utf-8');
+  });
+
+  ipc.handle('fs:writeFile', async (_e, p: string, content: string) => {
+    const dir = path.dirname(p);
+    await fs.mkdir(dir, { recursive: true });
+    const tmp = `${p}.tmp-${process.pid}-${Date.now()}`;
+    await fs.writeFile(tmp, content, 'utf-8');
+    await fs.rename(tmp, p);
+    return true;
+  });
+
+  ipc.handle('fs:createFile', async (_e, p: string) => {
+    await fs.writeFile(p, '', { flag: 'wx' });
+    return true;
+  });
+
+  ipc.handle('fs:createDir', async (_e, p: string) => {
+    await fs.mkdir(p, { recursive: true });
+    return true;
+  });
+
+  ipc.handle('fs:delete', async (_e, p: string) => {
+    await fs.rm(p, { recursive: true, force: true });
+    return true;
+  });
+
+  ipc.handle('fs:rename', async (_e, oldP: string, newP: string) => {
+    await fs.rename(oldP, newP);
+    return true;
+  });
+
+  ipc.on('fs:watch:start', (e, dir: string) => {
+    if (watchers.has(dir)) return;
+    const w = chokidar.watch(dir, {
+      ignored: (p) => isIgnored(p),
+      ignoreInitial: true,
+      depth: 10,
+      awaitWriteFinish: { stabilityThreshold: 150 },
+    });
+    w.on('all', (evt, file) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`fs:watch:${dir}`, evt, file);
+    });
+    watchers.set(dir, w);
+  });
+
+  ipc.on('fs:watch:stop', (_e, dir: string) => {
+    watchers.get(dir)?.close();
+    watchers.delete(dir);
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/ollama.ts ===
+import type { IpcMain } from 'electron';
+import http from 'node:http';
+
+const OLLAMA = 'http://127.0.0.1:11434';
+const activeRequests = new Map<string, http.ClientRequest>();
+
+function request(url: string, method: string, body?: unknown): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname + u.search,
+        method,
+        timeout: 5000,
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)); } catch { resolve(data); }
+        });
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error('Ollama request timed out')));
+    req.on('error', reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
+
+export function registerOllamaHandlers(ipc: IpcMain) {
+  ipc.handle('ollama:health', async () => {
+    try {
+      await request(`${OLLAMA}/api/tags`, 'GET');
+      return { ok: true, url: OLLAMA };
+    } catch (e) {
+      return { ok: false, url: OLLAMA, error: (e as Error).message };
+    }
+  });
+
+  ipc.handle('ollama:list', async () => {
+    try {
+      const res = await request(`${OLLAMA}/api/tags`, 'GET');
+      return res.models ?? [];
+    } catch {
+      return [];
+    }
+  });
+
+  ipc.handle('ollama:chat', async (_e, payload: any) => {
+    return request(`${OLLAMA}/api/chat`, 'POST', {
+      model: payload.model,
+      messages: payload.messages,
+      stream: false,
+      options: { temperature: payload.temperature ?? 0.7 },
+    });
+  });
+
+  ipc.on('ollama:stream', (e, payload: any) => {
+    const u = new URL(`${OLLAMA}/api/chat`);
+    let finished = false;
+    const finalize = () => {
+      if (!finished) {
+        finished = true;
+        if (!e.sender.isDestroyed()) e.sender.send(`ollama:done:${payload.id}`);
+      }
+      activeRequests.delete(payload.id);
+    };
+
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      },
+      (res) => {
+        let buf = '';
+        res.on('data', (chunk: Buffer) => {
+          buf += chunk.toString('utf-8');
+          const parts = buf.split('\n');
+          buf = parts.pop() ?? '';
+          for (const line of parts) {
+            if (!line.trim()) continue;
+            try {
+              const obj = JSON.parse(line);
+              if (obj.message?.content && !e.sender.isDestroyed()) {
+                e.sender.send(`ollama:chunk:${payload.id}`, obj.message.content);
+              }
+              if (obj.done) finalize();
+            } catch { /* partial */ }
+          }
+        });
+        res.on('end', finalize);
+      }
+    );
+
+    req.on('error', (err) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`ollama:error:${payload.id}`, err.message);
+      finished = true;
+      activeRequests.delete(payload.id);
+    });
+
+    req.write(
+      JSON.stringify({
+        model: payload.model,
+        messages: payload.messages,
+        stream: true,
+        options: { temperature: payload.temperature ?? 0.7 },
+      })
+    );
+    req.end();
+    activeRequests.set(payload.id, req);
+  });
+
+  ipc.on('ollama:abort', (_e, id: string) => {
+    const r = activeRequests.get(id);
+    if (r) {
+      r.destroy();
+      activeRequests.delete(id);
+    }
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/terminal.ts ===
+import type { IpcMain } from 'electron';
+import * as pty from 'node-pty';
+import os from 'node:os';
+import fs from 'node:fs';
+
+const terminals = new Map<string, pty.IPty>();
+
+function pickShell(): string {
+  if (process.platform === 'win32') {
+    const candidates = [
+      'C:\\Program Files\\PowerShell\\7\\pwsh.exe',
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+      process.env.COMSPEC,
+    ].filter(Boolean) as string[];
+    for (const c of candidates) {
+      try { if (fs.existsSync(c)) return c; } catch {}
+    }
+    return process.env.COMSPEC || 'cmd.exe';
+  }
+  return process.env.SHELL || '/bin/bash';
+}
+
+export function registerTerminalHandlers(ipc: IpcMain) {
+  ipc.handle('term:create', (e, id: string, cwd: string) => {
+    if (terminals.has(id)) return true;
+    let safeCwd = cwd || os.homedir();
+    try { if (!fs.existsSync(safeCwd)) safeCwd = os.homedir(); } catch { safeCwd = os.homedir(); }
+
+    const shell = pickShell();
+    const args = process.platform === 'win32' && shell.endsWith('powershell.exe')
+      ? ['-NoLogo']
+      : [];
+
+    const p = pty.spawn(shell, args, {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd: safeCwd,
+      env: { ...process.env, TERM: 'xterm-256color' } as Record<string, string>,
+    });
+
+    p.onData((d) => {
+      if (!e.sender.isDestroyed()) e.sender.send(`term:data:${id}`, d);
+    });
+    p.onExit(({ exitCode }) => {
+      terminals.delete(id);
+      if (!e.sender.isDestroyed()) {
+        e.sender.send(`term:data:${id}`, `\r\n[process exited with code ${exitCode}]\r\n`);
+      }
+    });
+
+    terminals.set(id, p);
+    return true;
+  });
+
+  ipc.on('term:write', (_e, id: string, data: string) => {
+    terminals.get(id)?.write(data);
+  });
+
+  ipc.on('term:resize', (_e, id: string, cols: number, rows: number) => {
+    try { terminals.get(id)?.resize(Math.max(2, cols), Math.max(2, rows)); } catch {}
+  });
+
+  ipc.on('term:kill', (_e, id: string) => {
+    try { terminals.get(id)?.kill(); } catch {}
+    terminals.delete(id);
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/project.ts ===
+import type { IpcMain } from 'electron';
+import Store from 'electron-store';
+
+interface Project { id: string; name: string; path: string; lastOpened: number; }
+interface Schema {
+  projects: Project[];
+  recent: Project | null;
+  chats: Record<string, unknown>;
+  settings: Record<string, unknown>;
+}
+
+const store = new Store<Schema>({
+  name: 'applab-data',
+  defaults: { projects: [], recent: null, chats: {}, settings: {} },
+});
+
+export function registerProjectHandlers(ipc: IpcMain) {
+  ipc.handle('project:save', (_e, data: Project) => {
+    const projects = store.get('projects');
+    const idx = projects.findIndex((p) => p.id === data.id);
+    if (idx >= 0) projects[idx] = data;
+    else projects.push(data);
+    store.set('projects', projects);
+    store.set('recent', data);
+    return true;
+  });
+
+  ipc.handle('project:list', () => store.get('projects'));
+  ipc.handle('project:load', () => store.get('recent'));
+
+  ipc.handle('project:saveChat', (_e, workspace: string, messages: unknown) => {
+    const chats = store.get('chats');
+    chats[workspace] = messages;
+    store.set('chats', chats);
+    return true;
+  });
+
+  ipc.handle('project:loadChat', (_e, workspace: string) => {
+    const chats = store.get('chats');
+    return chats[workspace] ?? [];
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/search.ts ===
+import type { IpcMain } from 'electron';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+const IGNORE = new Set([
+  'node_modules', '.git', 'dist', 'build', '.next', '__pycache__',
+  '.venv', 'venv', '.idea', '.vscode', 'target', 'out', '.cache', 'coverage',
+]);
+
+const TEXT_EXT = new Set([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.md', '.txt',
+  '.html', '.css', '.scss', '.less', '.py', '.rb', '.go', '.rs', '.java',
+  '.kt', '.swift', '.c', '.h', '.cpp', '.hpp', '.cs', '.php', '.sh',
+  '.yml', '.yaml', '.toml', '.ini', '.sql', '.vue', '.svelte', '.env',
+]);
+
+const MAX_FILE = 1 * 1024 * 1024;
+const MAX_RESULTS = 500;
+
+interface Hit { file: string; line: number; text: string; }
+
+async function walk(dir: string, out: string[], budget = { count: 0 }) {
+  if (budget.count > 5000) return;
+  let entries: import('node:fs').Dirent[];
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true });
+  } catch { return; }
+
+  for (const ent of entries) {
+    if (IGNORE.has(ent.name)) continue;
+    const full = path.join(dir, ent.name);
+    if (ent.isDirectory()) {
+      await walk(full, out, budget);
+    } else if (ent.isFile()) {
+      const ext = path.extname(ent.name).toLowerCase();
+      if (TEXT_EXT.has(ext)) {
+        out.push(full);
+        budget.count++;
+      }
+    }
+  }
+}
+
+export function registerSearchHandlers(ipc: IpcMain) {
+  ipc.handle('search:inWorkspace', async (_e, root: string, query: string, opts?: { max?: number }) => {
+    if (!query || !root) return [];
+    const max = opts?.max ?? MAX_RESULTS;
+    const files: string[] = [];
+    await walk(root, files);
+    const q = query.toLowerCase();
+    const hits: Hit[] = [];
+
+    for (const file of files) {
+      if (hits.length >= max) break;
+      try {
+        const st = await fs.stat(file);
+        if (st.size > MAX_FILE) continue;
+        const text = await fs.readFile(file, 'utf-8');
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].toLowerCase().includes(q)) {
+            hits.push({ file, line: i + 1, text: lines[i].slice(0, 300) });
+            if (hits.length >= max) break;
+          }
+        }
+      } catch {}
+    }
+    return hits;
+  });
+}
+
+================================================================================
+=== FILE: electron/ipc/git.ts ===
+import type { IpcMain } from 'electron';
+import { simpleGit } from 'simple-git';
+
+function gitFor(root: string) {
+  return simpleGit({ baseDir: root, binary: 'git', maxConcurrentProcesses: 1 });
+}
+
+export function registerGitHandlers(ipc: IpcMain) {
+  ipc.handle('git:status', async (_e, root: string) => {
+    try {
+      const g = gitFor(root);
+      const isRepo = await g.checkIsRepo();
+      if (!isRepo) return { isRepo: false, files: [] };
+      const status = await g.status();
+      const files = status.files.map((f) => ({
+        path: f.path,
+        index: f.index,
+        working_dir: f.working_dir,
+      }));
+      return { isRepo: true, branch: status.current, files };
+    } catch (e) {
+      return { isRepo: false, files: [], error: (e as Error).message };
+    }
+  });
+
+  ipc.handle('git:diff', async (_e, root: string, file: string) => {
+    try {
+      const g = gitFor(root);
+      return await g.diff([file]);
+    } catch (e) {
+      return '';
+    }
+  });
+}
+
+================================================================================
+=== FILE: src/main.tsx ===
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import './styles/global.css';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+================================================================================
+=== FILE: src/App.tsx ===
+import { useEffect, useState } from 'react';
+import { useStore } from './store';
+import Layout from './components/Layout/Layout';
+import ErrorBoundary from './components/Layout/ErrorBoundary';
+import Onboarding from './components/Onboarding/Onboarding';
+
+export default function App() {
+  const { setModels, setOllamaStatus } = useStore();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const health = await (window as any).applab.ollama.health();
+      setOllamaStatus(health);
+      if (health.ok) {
+        const models = await (window as any).applab.ollama.list();
+        setModels(models);
+      }
+      setReady(true);
+    })();
+  }, [setModels, setOllamaStatus]);
+
+  if (!ready) {
+    return <div style={{ padding: 40, color: '#8b949e' }}>Starting APPLAB AI Studio...</div>;
+  }
+
+  return (
+    <ErrorBoundary>
+      <Layout />
+      <Onboarding />
+    </ErrorBoundary>
+  );
+}
+
+================================================================================
+=== FILE: src/store/index.ts ===
+import { create } from 'zustand';
+
+export interface FileNode {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size?: number;
+  mtime?: number;
+}
+
+export interface OpenTab {
+  path: string;
+  content: string;
+  dirty: boolean;
+  original: string;
+}
+
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+export interface GitFile { path: string; index: string; working_dir: string; }
+
+export interface OllamaStatus { ok: boolean; url?: string; error?: string; }
+
+interface State {
+  workspace: string | null;
+  files: Record<string, FileNode[]>;
+  openTabs: OpenTab[];
+  activeTab: string | null;
+  models: { name: string; size?: number }[];
+  activeModel: string | null;
+  messages: ChatMessage[];
+  ollamaStatus: OllamaStatus | null;
+  gitFiles: Record<string, string>;
+  sidebarOpen: boolean;
+  chatOpen: boolean;
+  terminalOpen: boolean;
+  paletteOpen: boolean;
+
+  setWorkspace: (p: string | null) => void;
+  setFiles: (dir: string, files: FileNode[]) => void;
+  openFile: (path: string, content: string) => void;
+  closeTab: (path: string) => void;
+  setActiveTab: (path: string | null) => void;
+  updateContent: (path: string, content: string) => void;
+  markSaved: (path: string, content: string) => void;
+
+  setModels: (m: { name: string }[]) => void;
+  setActiveModel: (m: string) => void;
+  addMessage: (m: ChatMessage) => void;
+  appendToLast: (chunk: string) => void;
+  clearMessages: () => void;
+  setMessages: (m: ChatMessage[]) => void;
+
+  setOllamaStatus: (s: OllamaStatus) => void;
+  setGitFiles: (files: GitFile[]) => void;
+
+  toggleSidebar: () => void;
+  toggleChat: () => void;
+  toggleTerminal: () => void;
+  setPaletteOpen: (b: boolean) => void;
+}
+
+export const useStore = create<State>((set, get) => ({
+  workspace: null,
+  files: {},
+  openTabs: [],
+  activeTab: null,
+  models: [],
+  activeModel: null,
+  messages: [],
+  ollamaStatus: null,
+  gitFiles: {},
+  sidebarOpen: true,
+  chatOpen: true,
+  terminalOpen: false,
+  paletteOpen: false,
+
+  setWorkspace: (p) => set({ workspace: p, files: {}, openTabs: [], activeTab: null }),
+
+  setFiles: (dir, files) =>
+    set((s) => ({ files: { ...s.files, [dir]: files } })),
+
+  openFile: (path, content) =>
+    set((s) => {
+      const existing = s.openTabs.find((t) => t.path === path);
+      if (existing) return { activeTab: path };
+      return {
+        openTabs: [...s.openTabs, { path, content, original: content, dirty: false }],
+        activeTab: path,
+      };
+    }),
+
+  closeTab: (path) =>
+    set((s) => {
+      const tabs = s.openTabs.filter((t) => t.path !== path);
+      let active = s.activeTab;
+      if (active === path) active = tabs[tabs.length - 1]?.path ?? null;
+      return { openTabs: tabs, activeTab: active };
+    }),
+
+  setActiveTab: (path) => set({ activeTab: path }),
+
+  updateContent: (path, content) =>
+    set((s) => ({
+      openTabs: s.openTabs.map((t) =>
+        t.path === path ? { ...t, content, dirty: content !== t.original } : t
+      ),
+    })),
+
+  markSaved: (path, content) =>
+    set((s) => ({
+      openTabs: s.openTabs.map((t) =>
+        t.path === path ? { ...t, original: content, dirty: false } : t
+      ),
+    })),
+
+  setModels: (m) =>
+    set({ models: m, activeModel: get().activeModel ?? m[0]?.name ?? null }),
+  setActiveModel: (m) => set({ activeModel: m }),
+
+  addMessage: (m) => set((s) => ({ messages: [...s.messages, m] })),
+  appendToLast: (chunk) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant') {
+        msgs[msgs.length - 1] = { ...last, content: last.content + chunk };
+      } else {
+        msgs.push({ role: 'assistant', content: chunk });
+      }
+      return { messages: msgs };
+    }),
+  clearMessages: () => set({ messages: [] }),
+  setMessages: (m) => set({ messages: m }),
+
+  setOllamaStatus: (s) => set({ ollamaStatus: s }),
+  setGitFiles: (files) =>
+    set({
+      gitFiles: Object.fromEntries(files.map((f) => [f.path, f.working_dir || f.index])),
+    }),
+
+  toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+  toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
+  toggleTerminal: () => set((s) => ({ terminalOpen: !s.terminalOpen })),
+  setPaletteOpen: (b) => set({ paletteOpen: b }),
+}));
+
+================================================================================
+=== FILE: src/ai/prompts.ts ===
+export function buildSystemPrompt(path?: string, content?: string) {
+  const base = `You are APPLAB AI, an expert coding assistant embedded in a desktop IDE.
+Be concise and precise. Return code in fenced blocks with language tags.
+When suggesting edits, prefer complete runnable snippets.`;
+
+  if (path && content) {
+    return `${base}
+
+The user is currently editing: ${path}
+
+Current file contents (truncated to 6000 chars):
+\`\`\`
+${content.slice(0, 6000)}
+\`\`\`
+
+When the user asks for changes, describe them briefly, then give the replacement code.`;
+  }
+  return base;
+}
+
+export const QUICK_PROMPTS = {
+  explain: 'Explain what this file does, step by step.',
+  refactor: 'Refactor this file for clarity and correctness. Return the full file.',
+  tests: 'Write unit tests for this file.',
+  bugs: 'Find bugs, edge cases, and security issues in this file.',
+  docs: 'Add docstrings or comments to this file. Return the full file.',
+};
+
+================================================================================
+=== FILE: src/components/Layout/ErrorBoundary.tsx ===
+import { Component, type ReactNode } from 'react';
+
+interface Props { children: ReactNode; }
+interface State { error: Error | null; }
+
+export default class ErrorBoundary extends Component<Props, State> {
+  state: State = { error: null };
+
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error('[APPLAB] UI error:', error);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 40, color: '#e6edf3', fontFamily: 'monospace' }}>
+          <h2>Something went wrong.</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', marginTop: 16, color: '#f85149' }}>
+            {this.state.error.message}
+          </pre>
+          <button
+            style={{ marginTop: 16 }}
+            onClick={() => this.setState({ error: null })}
+          >
+            Retry
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+================================================================================
+=== FILE: src/components/Layout/Layout.tsx ===
+import { useEffect } from 'react';
+import Sidebar from '../FileTree/Sidebar';
+import EditorPane from '../Editor/EditorPane';
+import ChatPanel from '../ChatPanel/ChatPanel';
+import TerminalPanel from '../Terminal/TerminalPanel';
+import CommandPalette from '../Palette/CommandPalette';
+import { useStore } from '../../store';
+
+export default function Layout() {
+  const {
+    sidebarOpen, chatOpen, terminalOpen, paletteOpen,
+    toggleSidebar, toggleChat, toggleTerminal, setPaletteOpen,
+  } = useStore();
+
+  useEffect(() => {
+    const unsub = (window as any).applab.app.onMenu((action: string) => {
+      switch (action) {
+        case 'sidebar': toggleSidebar(); break;
+        case 'chat': toggleChat(); break;
+        case 'terminal': toggleTerminal(); break;
+        case 'palette': setPaletteOpen(true); break;
+        case 'save':
+          window.dispatchEvent(new CustomEvent('applab:save'));
+          break;
+        case 'openFolder':
+          window.dispatchEvent(new CustomEvent('applab:openFolder'));
+          break;
+      }
+    });
+
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('applab:save'));
+      }
+      if (e.key === 'Escape') {
+        setPaletteOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      unsub();
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [toggleSidebar, toggleChat, toggleTerminal, setPaletteOpen]);
+
+  return (
+    <div className="app">
+      <header className="titlebar">
+        <div className="brand">APPLAB AI STUDIO</div>
+        <div className="actions">
+          <button onClick={toggleSidebar} title="Ctrl+B">Files</button>
+          <button onClick={toggleChat} title="Ctrl+Shift+A">AI</button>
+          <button onClick={toggleTerminal} title="Ctrl+`">Terminal</button>
+          <button onClick={() => setPaletteOpen(true)} title="Ctrl+K">Cmd</button>
+        </div>
+      </header>
+      <div className="body">
+        {sidebarOpen && <aside className="sidebar"><Sidebar /></aside>}
+        <main className="editor"><EditorPane /></main>
+        {chatOpen && <aside className="chat"><ChatPanel /></aside>}
+      </div>
+      {terminalOpen && (
+        <div className="terminal">
+          <TerminalPanel />
+        </div>
+      )}
+      {paletteOpen && <CommandPalette />}
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/FileTree/Sidebar.tsx ===
+import { useCallback, useEffect, useState } from 'react';
+import { useStore } from '../../store';
+
+export default function Sidebar() {
+  const {
+    workspace, files, gitFiles,
+    setWorkspace, setFiles, openFile, setGitFiles,
+  } = useStore();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+  const refreshGit = useCallback(async (root: string) => {
+    const res = await (window as any).applab.git.status(root);
+    if (res?.isRepo) setGitFiles(res.files ?? []);
+    else setGitFiles([]);
+  }, [setGitFiles]);
+
+  const loadDir = useCallback(async (dir: string) => {
+    const list = await (window as any).applab.fs.readDir(dir);
+    setFiles(dir, list);
+    return list;
+  }, [setFiles]);
+
+  const pickFolder = useCallback(async () => {
+    const dir = await (window as any).applab.dialog.openDirectory();
+    if (!dir) return;
+    setWorkspace(dir);
+    await loadDir(dir);
+    setExpanded({ [dir]: true });
+    refreshGit(dir);
+
+    const unwatch = (window as any).applab.fs.watch(dir, async (evt: string, file: string) => {
+      if (['add', 'unlink', 'addDir', 'unlinkDir'].includes(evt)) {
+        await loadDir(dir);
+        refreshGit(dir);
+      } else if (evt === 'change') {
+        refreshGit(dir);
+        // Reload tab if file is not dirty
+        const state = useStore.getState();
+        const tab = state.openTabs.find((t) => t.path === file);
+        if (tab && !tab.dirty) {
+          try {
+            const content = await (window as any).applab.fs.readFile(file);
+            state.openFile(file, content);
+          } catch {}
+        }
+      }
+    });
+    return unwatch;
+  }, [loadDir, refreshGit, setWorkspace]);
+
+  useEffect(() => {
+    const handler = () => pickFolder();
+    window.addEventListener('applab:openFolder', handler);
+    return () => window.removeEventListener('applab:openFolder', handler);
+  }, [pickFolder]);
+
+  const handleClick = async (node: { path: string; isDirectory: boolean }) => {
+    if (node.isDirectory) {
+      const isOpen = expanded[node.path];
+      setExpanded((e) => ({ ...e, [node.path]: !isOpen }));
+      if (!isOpen && !files[node.path]) {
+        await loadDir(node.path);
+      }
+    } else {
+      try {
+        const content = await (window as any).applab.fs.readFile(node.path);
+        openFile(node.path, content);
+      } catch (e) {
+        alert(`Failed to open file: ${(e as Error).message}`);
+      }
+    }
+  };
+
+  const badgeFor = (path: string) => {
+    const s = gitFiles[path];
+    if (!s) return null;
+    if (s.includes('?')) return 'U';
+    if (s.includes('A')) return 'A';
+    if (s.includes('M')) return 'M';
+    if (s.includes('D')) return 'D';
+    return '*';
+  };
+
+  const renderTree = (dir: string, depth = 0): JSX.Element[] => {
+    const list = files[dir] ?? [];
+    return list.map((n) => {
+      const isOpen = expanded[n.path];
+      const badge = badgeFor(n.path);
+      return (
+        <div key={n.path}>
+          <div
+            className="tree-node"
+            style={{ paddingLeft: depth * 12 + 8 }}
+            onClick={() => handleClick(n)}
+            title={n.path}
+          >
+            <span className="tree-icon">{n.isDirectory ? (isOpen ? '▾' : '▸') : '·'}</span>
+            <span className="tree-name">{n.name}</span>
+            {badge && <span className={`git-badge git-${badge}`}>{badge}</span>}
+          </div>
+          {n.isDirectory && isOpen && files[n.path] && renderTree(n.path, depth + 1)}
+        </div>
+      );
+    });
+  };
+
+  return (
+    <div className="sidebar-pane">
+      <div className="sidebar-header">
+        <button onClick={pickFolder} className="open-folder">
+          {workspace ? 'Change Folder' : 'Open Folder'}
+        </button>
+      </div>
+      {workspace && (
+        <div className="workspace-path" title={workspace}>
+          {workspace.split(/[\\/]/).pop()}
+        </div>
+      )}
+      <div className="tree">{workspace && renderTree(workspace)}</div>
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/Editor/EditorPane.tsx ===
+import { useEffect } from 'react';
+import Editor from '@monaco-editor/react';
+import { useStore } from '../../store';
+
+function languageFor(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    mjs: 'javascript', cjs: 'javascript', json: 'json', md: 'markdown',
+    html: 'html', css: 'css', scss: 'scss', less: 'less', py: 'python',
+    rb: 'ruby', go: 'go', rs: 'rust', java: 'java', kt: 'kotlin',
+    swift: 'swift', c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cs: 'csharp',
+    php: 'php', sh: 'shell', yml: 'yaml', yaml: 'yaml', toml: 'ini',
+    sql: 'sql', vue: 'html', svelte: 'html',
+  };
+  return map[ext] ?? 'plaintext';
+}
+
+export default function EditorPane() {
+  const {
+    openTabs, activeTab, updateContent, closeTab, setActiveTab, markSaved,
+  } = useStore();
+
+  const active = openTabs.find((t) => t.path === activeTab);
+
+  const save = async () => {
+    const state = useStore.getState();
+    const tab = state.openTabs.find((t) => t.path === state.activeTab);
+    if (!tab) return;
+    try {
+      await (window as any).applab.fs.writeFile(tab.path, tab.content);
+      markSaved(tab.path, tab.content);
+    } catch (e) {
+      alert(`Save failed: ${(e as Error).message}`);
+    }
+  };
+
+  useEffect(() => {
+    const handler = () => save();
+    window.addEventListener('applab:save', handler);
+    return () => window.removeEventListener('applab:save', handler);
+  }, []);
+
+  return (
+    <div className="editor-pane">
+      <div className="tabs">
+        {openTabs.map((t) => {
+          const name = t.path.split(/[\\/]/).pop();
+          return (
+            <div
+              key={t.path}
+              className={`tab ${t.path === activeTab ? 'active' : ''}`}
+              onClick={() => setActiveTab(t.path)}
+              title={t.path}
+            >
+              <span className="tab-name">{name}</span>
+              {t.dirty && <span className="dot">●</span>}
+              <button
+                className="tab-close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (t.dirty && !confirm(`Close ${name} without saving?`)) return;
+                  closeTab(t.path);
+                }}
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      {active && (
+        <div className="editor-toolbar">
+          <button onClick={save} disabled={!active.dirty}>Save (Ctrl+S)</button>
+          <span className="path">{active.path}</span>
+        </div>
+      )}
+      {active ? (
+        <div className="editor-host">
+          <Editor
+            height="100%"
+            theme="vs-dark"
+            path={active.path}
+            language={languageFor(active.path)}
+            value={active.content}
+            onChange={(v) => updateContent(active.path, v ?? '')}
+            options={{
+              fontSize: 14,
+              minimap: { enabled: true },
+              automaticLayout: true,
+              scrollBeyondLastLine: false,
+              tabSize: 2,
+              wordWrap: 'off',
+              renderWhitespace: 'selection',
+            }}
+          />
+        </div>
+      ) : (
+        <div className="empty">
+          <div>
+            <div className="empty-title">APPLAB AI Studio</div>
+            <div className="empty-sub">
+              Open a folder (Ctrl+O) or a file to begin.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/ChatPanel/ChatPanel.tsx ===
+import { useEffect, useRef, useState } from 'react';
+import { useStore } from '../../store';
+import { buildSystemPrompt, QUICK_PROMPTS } from '../../ai/prompts';
+
+function extractCodeBlock(text: string): string | null {
+  const m = text.match(/```[a-zA-Z0-9+#-]*\n([\s\S]*?)```/);
+  return m ? m[1] : null;
+}
+
+export default function ChatPanel() {
+  const {
+    activeModel, models, setActiveModel,
+    messages, addMessage, appendToLast, setMessages,
+    activeTab, openTabs, updateContent,
+  } = useStore();
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const abortRef = useRef<(() => void) | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const workspace = useStore((s) => s.workspace);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (!workspace) return;
+    (async () => {
+      const saved = await (window as any).applab.project.loadChat(workspace);
+      if (Array.isArray(saved) && saved.length) setMessages(saved);
+    })();
+  }, [workspace, setMessages]);
+
+  const persist = (next: unknown[]) => {
+    if (workspace) (window as any).applab.project.saveChat(workspace, next);
+  };
+
+  const send = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
+    if (!text || !activeModel || busy) return;
+
+    const activeFile = openTabs.find((t) => t.path === activeTab);
+    const userMsg = { role: 'user' as const, content: text };
+    const history = [
+      { role: 'system', content: buildSystemPrompt(activeFile?.path, activeFile?.content) },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+      userMsg,
+    ];
+    const nextMessages = [...messages, userMsg, { role: 'assistant' as const, content: '' }];
+
+    addMessage(userMsg);
+    addMessage({ role: 'assistant', content: '' });
+    persist(nextMessages);
+    setInput('');
+    setBusy(true);
+
+    abortRef.current = (window as any).applab.ollama.stream(
+      { model: activeModel, messages: history },
+      (chunk: string) => appendToLast(chunk),
+      () => {
+        setBusy(false);
+        abortRef.current = null;
+        persist(useStore.getState().messages);
+      },
+      (err: string) => {
+        appendToLast(`\n[error: ${err}]`);
+        setBusy(false);
+        abortRef.current = null;
+      }
+    );
+  };
+
+  const stop = () => {
+    abortRef.current?.();
+    abortRef.current = null;
+    setBusy(false);
+  };
+
+  const applyCode = (msg: { content: string }) => {
+    const code = extractCodeBlock(msg.content);
+    if (!code) return alert('No fenced code block found in this message.');
+    if (!activeTab) return alert('No file open. Open a file first.');
+    const name = activeTab.split(/[\\/]/).pop();
+    if (!confirm(`Replace contents of ${name} with the code block from this message?`)) return;
+    updateContent(activeTab, code);
+  };
+
+  const quick = (key: keyof typeof QUICK_PROMPTS) => send(QUICK_PROMPTS[key]);
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-header">
+        <select
+          value={activeModel ?? ''}
+          onChange={(e) => setActiveModel(e.target.value)}
+        >
+          {models.length === 0 && <option value="">No models found</option>}
+          {models.map((m) => (
+            <option key={m.name} value={m.name}>{m.name}</option>
+          ))}
+        </select>
+        <div className="quick-row">
+          <button onClick={() => quick('explain')} disabled={busy}>Explain</button>
+          <button onClick={() => quick('refactor')} disabled={busy}>Refactor</button>
+          <button onClick={() => quick('bugs')} disabled={busy}>Bugs</button>
+          <button onClick={() => quick('tests')} disabled={busy}>Tests</button>
+        </div>
+      </div>
+
+      <div className="messages" ref={scrollRef}>
+        {messages.length === 0 && (
+          <div className="chat-empty">
+            Ask anything about your code. Open a file first for context-aware answers.
+          </div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`msg msg-${m.role}`}>
+            <div className="msg-role">{m.role}</div>
+            <pre className="msg-content">{m.content || (busy ? '...' : '')}</pre>
+            {m.role === 'assistant' && m.content.includes('```') && (
+              <div className="msg-actions">
+                <button onClick={() => applyCode(m)}>Apply to file</button>
+                <button onClick={() => navigator.clipboard.writeText(m.content)}>Copy</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="chat-input">
+        <textarea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Ask AI about your code... (Enter to send, Shift+Enter for newline)"
+        />
+        <div className="chat-buttons">
+          {busy
+            ? <button onClick={stop} className="stop-btn">Stop</button>
+            : <button onClick={() => send()} disabled={!activeModel}>Send</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/Terminal/TerminalPanel.tsx ===
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
+import { useStore } from '../../store';
+
+interface TabState {
+  id: string;
+  term: Terminal;
+  fit: FitAddon;
+  dispose: () => void;
+}
+
+let tabCounter = 0;
+
+export default function TerminalPanel() {
+  const workspace = useStore((s) => s.workspace);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef<Map<string, TabState>>(new Map());
+  const [tabs, setTabs] = useState<string[]>([]);
+  const [active, setActive] = useState<string | null>(null);
+
+  const attach = useCallback((id: string, tab: TabState) => {
+    if (!hostRef.current) return;
+    hostRef.current.innerHTML = '';
+    hostRef.current.appendChild(tab.term.element!);
+    requestAnimationFrame(() => {
+      tab.fit.fit();
+      (window as any).applab.terminal.resize(id, tab.term.cols, tab.term.rows);
+    });
+  }, []);
+
+  const createTab = useCallback(async () => {
+    if (!hostRef.current) return;
+    const id = `t${++tabCounter}-${Math.random().toString(36).slice(2, 6)}`;
+    const term = new Terminal({
+      fontFamily: 'Consolas, "Cascadia Mono", monospace',
+      fontSize: 13,
+      theme: { background: '#0d1117', foreground: '#e6edf3' },
+      cursorBlink: true,
+    });
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(hostRef.current);
+
+    const offData = (window as any).applab.terminal.onData(id, (d: string) => term.write(d));
+    term.onData((d) => (window as any).applab.terminal.write(id, d));
+    term.onResize(({ cols, rows }) => (window as any).applab.terminal.resize(id, cols, rows));
+
+    await (window as any).applab.terminal.create(id, workspace ?? '');
+
+    const dispose = () => {
+      offData();
+      (window as any).applab.terminal.kill(id);
+      term.dispose();
+    };
+
+    const tab: TabState = { id, term, fit, dispose };
+    tabsRef.current.set(id, tab);
+    setTabs((prev) => [...prev, id]);
+    setActive(id);
+    attach(id, tab);
+  }, [workspace, attach]);
+
+  const closeTab = (id: string) => {
+    const tab = tabsRef.current.get(id);
+    if (!tab) return;
+    tab.dispose();
+    tabsRef.current.delete(id);
+    setTabs((prev) => {
+      const next = prev.filter((x) => x !== id);
+      if (active === id) {
+        const newActive = next[next.length - 1] ?? null;
+        setActive(newActive);
+        if (newActive) {
+          const t = tabsRef.current.get(newActive);
+          if (t) attach(newActive, t);
+        } else {
+          hostRef.current && (hostRef.current.innerHTML = '');
+        }
+      }
+      return next;
+    });
+  };
+
+  const switchTo = (id: string) => {
+    const tab = tabsRef.current.get(id);
+    if (!tab) return;
+    setActive(id);
+    attach(id, tab);
+  };
+
+  useEffect(() => {
+    createTab();
+    const onResize = () => {
+      const t = active ? tabsRef.current.get(active) : null;
+      if (t) t.fit.fit();
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      for (const t of tabsRef.current.values()) t.dispose();
+      tabsRef.current.clear();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="terminal-wrap">
+      <div className="terminal-tabs">
+        {tabs.map((id) => (
+          <div
+            key={id}
+            className={`term-tab ${id === active ? 'active' : ''}`}
+            onClick={() => switchTo(id)}
+          >
+            <span>shell</span>
+            <button onClick={(e) => { e.stopPropagation(); closeTab(id); }}>×</button>
+          </div>
+        ))}
+        <button className="term-add" onClick={createTab}>+</button>
+      </div>
+      <div ref={hostRef} className="terminal-xterm" />
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/Palette/CommandPalette.tsx ===
+import { useEffect, useMemo, useState } from 'react';
+import { useStore } from '../../store';
+
+interface Cmd {
+  id: string;
+  label: string;
+  run: () => void;
+}
+
+export default function CommandPalette() {
+  const {
+    setPaletteOpen, toggleSidebar, toggleChat, toggleTerminal,
+    openTabs, setActiveTab, closeTab, workspace,
+  } = useStore();
+  const [query, setQuery] = useState('');
+  const [idx, setIdx] = useState(0);
+
+  const commands: Cmd[] = useMemo(() => {
+    const list: Cmd[] = [
+      { id: 'open-folder', label: 'Open Folder...', run: () => window.dispatchEvent(new CustomEvent('applab:openFolder')) },
+      { id: 'save', label: 'Save Current File', run: () => window.dispatchEvent(new CustomEvent('applab:save')) },
+      { id: 'toggle-sidebar', label: 'Toggle Sidebar', run: toggleSidebar },
+      { id: 'toggle-chat', label: 'Toggle AI Chat', run: toggleChat },
+      { id: 'toggle-terminal', label: 'Toggle Terminal', run: toggleTerminal },
+    ];
+    for (const t of openTabs) {
+      const name = t.path.split(/[\\/]/).pop() ?? t.path;
+      list.push({ id: `open:${t.path}`, label: `Open: ${name}`, run: () => setActiveTab(t.path) });
+      list.push({ id: `close:${t.path}`, label: `Close: ${name}`, run: () => closeTab(t.path) });
+    }
+    return list;
+  }, [openTabs, toggleSidebar, toggleChat, toggleTerminal, setActiveTab, closeTab]);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return commands;
+    const q = query.toLowerCase();
+    return commands.filter((c) => c.label.toLowerCase().includes(q));
+  }, [commands, query]);
+
+  useEffect(() => setIdx(0), [query]);
+
+  const runSelected = () => {
+    const cmd = filtered[idx];
+    if (cmd) {
+      cmd.run();
+      setPaletteOpen(false);
+    }
+  };
+
+  return (
+    <div className="palette-overlay" onClick={() => setPaletteOpen(false)}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Type a command..."
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setIdx((i) => Math.min(i + 1, filtered.length - 1)); }
+            if (e.key === 'ArrowUp') { e.preventDefault(); setIdx((i) => Math.max(i - 1, 0)); }
+            if (e.key === 'Enter') { e.preventDefault(); runSelected(); }
+          }}
+        />
+        <div className="palette-list">
+          {filtered.length === 0 && <div className="palette-empty">No matching commands</div>}
+          {filtered.map((c, i) => (
+            <div
+              key={c.id}
+              className={`palette-item ${i === idx ? 'active' : ''}`}
+              onMouseEnter={() => setIdx(i)}
+              onClick={() => { c.run(); setPaletteOpen(false); }}
+            >
+              {c.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/components/Onboarding/Onboarding.tsx ===
+import { useStore } from '../../store';
+
+export default function Onboarding() {
+  const status = useStore((s) => s.ollamaStatus);
+  const models = useStore((s) => s.models);
+  const [dismissed, setDismissed] = useStore((s) => [false, (_: boolean) => {}]) as any;
+
+  if (!status || status.ok) return null;
+  if (dismissed) return null;
+
+  return (
+    <div className="onboard-overlay" onClick={() => setDismissed(true)}>
+      <div className="onboard" onClick={(e) => e.stopPropagation()}>
+        <h2>Ollama not detected</h2>
+        <p>
+          APPLAB AI Studio uses <b>Ollama</b> for local AI features. The app
+          tried to reach <code>{status.url ?? 'http://127.0.0.1:11434'}</code> and failed.
+        </p>
+        <ol>
+          <li>Install Ollama from <a href="#" onClick={(e) => { e.preventDefault(); (window as any).applab && window.open('https://ollama.com'); }}>ollama.com</a></li>
+          <li>Start it: <code>ollama serve</code></li>
+          <li>Pull a model: <code>ollama pull llama3.2</code></li>
+          <li>Restart APPLAB AI Studio</li>
+        </ol>
+        {status.error && <pre className="onboard-error">{status.error}</pre>}
+        {models.length === 0 && <p className="onboard-note">Currently: no models found.</p>}
+        <div className="onboard-actions">
+          <button onClick={() => setDismissed(true)}>Dismiss</button>
+          <button onClick={() => location.reload()}>Retry</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+================================================================================
+=== FILE: src/styles/global.css ===
+:root {
+  --bg: #0d1117;
+  --bg-2: #161b22;
+  --bg-3: #21262d;
+  --bg-4: #30363d;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --fg-dim: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --yellow: #d29922;
+  --red: #f85149;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+  font-size: 13px;
+}
+
+a { color: var(--accent); }
+code { background: var(--bg-3); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+.titlebar {
+  height: 38px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+.brand { font-weight: 700; letter-spacing: 1.5px; color: var(--accent); font-size: 12px; }
+.titlebar .actions { display: flex; gap: 6px; }
+
+button {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+}
+button:hover:not(:disabled) { background: var(--bg-4); }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.stop-btn { background: #5a1d1d; border-color: #7a2828; }
+
+.body { flex: 1; display: flex; min-height: 0; }
+
+/* Sidebar */
+.sidebar {
+  width: 270px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.sidebar-pane { display: flex; flex-direction: column; height: 100%; }
+.sidebar-header { padding: 8px; border-bottom: 1px solid var(--border); }
+.open-folder { width: 100%; }
+.workspace-path {
+  padding: 6px 10px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree { flex: 1; overflow: auto; padding: 4px 0; }
+.tree-node {
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+.tree-node:hover { background: var(--bg-3); }
+.tree-icon { color: var(--fg-dim); width: 12px; }
+.tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.git-badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 3px;
+  font-weight: 700;
+}
+.git-M { background: #d2992233; color: var(--yellow); }
+.git-A { background: #3fb95033; color: var(--green); }
+.git-D { background: #f8514933; color: var(--red); }
+.git-U { background: #58a6ff33; color: var(--accent); }
+
+/* Editor */
+.editor { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.editor-pane { display: flex; flex-direction: column; height: 100%; }
+.tabs {
+  display: flex;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tab {
+  padding: 7px 10px;
+  font-size: 12px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+.tab.active { background: var(--bg); color: var(--fg); border-top: 2px solid var(--accent); }
+.tab-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.tab .dot { color: var(--accent); font-size: 10px; }
+.tab-close { background: transparent; border: none; padding: 0 4px; color: var(--fg-dim); font-size: 14px; }
+.tab-close:hover { color: var(--red); background: transparent; }
+
+.editor-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 5px 10px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+.editor-toolbar .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.editor-host { flex: 1; min-height: 0; }
+
+.empty { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; }
+.empty-title { font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 2px; margin-bottom: 8px; }
+.empty-sub { color: var(--fg-dim); }
+
+/* Chat */
+.chat {
+  width: 400px;
+  border-left: 1px solid var(--border);
+  background: var(--bg-2);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chat-panel { display: flex; flex-direction: column; height: 100%; }
+.chat-header { padding: 8px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.chat-header select {
+  width: 100%;
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  padding: 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.quick-row { display: flex; gap: 4px; }
+.quick-row button { flex: 1; font-size: 11px; padding: 4px 6px; }
+
+.messages { flex: 1; overflow-y: auto; padding: 10px; }
+.chat-empty { color: var(--fg-dim); text-align: center; padding: 30px 10px; font-size: 12px; }
+.msg {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  border-left: 3px solid transparent;
+}
+.msg-user { background: #1f6feb22; border-left-color: var(--accent); }
+.msg-assistant { background: var(--bg-3); border-left-color: var(--green); }
+.msg-system { background: #6e768122; font-size: 11px; border-left-color: var(--fg-dim); }
+.msg-role {
+  font-size: 10px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+.msg-content {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-family: 'Consolas', 'Cascadia Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.msg-actions { display: flex; gap: 6px; margin-top: 6px; }
+.msg-actions button { font-size: 11px; padding: 3px 8px; }
+
+.chat-input {
+  border-top: 1px solid var(--border);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-input textarea {
+  background: var(--bg-3);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  resize: none;
+  font-family: inherit;
+  font-size: 12px;
+  min-height: 60px;
+  max-height: 160px;
+  outline: none;
+}
+.chat-input textarea:focus { border-color: var(--accent); }
+.chat-buttons { display: flex; justify-content: flex-end; }
+
+/* Terminal */
+.terminal {
+  height: 260px;
+  border-top: 1px solid var(--border);
+  background: #0d1117;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.terminal-wrap { display: flex; flex-direction: column; height: 100%; }
+.terminal-tabs {
+  display: flex;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 6px;
+  gap: 4px;
+  align-items: center;
+}
+.term-tab {
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--fg-dim);
+}
+.term-tab.active { background: var(--bg-3); color: var(--fg); }
+.term-tab button { background: transparent; border: none; padding: 0; color: var(--fg-dim); font-size: 13px; }
+.term-add { padding: 2px 8px; font-size: 14px; }
+.terminal-xterm { flex: 1; padding: 4px 6px; overflow: hidden; }
+
+/* Palette */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 120px;
+  z-index: 100;
+}
+.palette {
+  width: 540px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+.palette input {
+  width: 100%;
+  background: var(--bg-3);
+  color: var(--fg);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  font-size: 14px;
+  outline: none;
+}
+.palette-list { max-height: 320px; overflow-y: auto; }
+.palette-item { padding: 8px 14px; font-size: 13px; cursor: pointer; }
+.palette-item.active { background: var(--bg-3); color: var(--accent); }
+.palette-empty { padding: 14px; color: var(--fg-dim); text-align: center; }
+
+/* Onboarding */
+.onboard-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 200;
+}
+.onboard {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 500px;
+  box-shadow: 0 20px 80px rgba(0,0,0,0.7);
+}
+.onboard h2 { margin-bottom: 12px; color: var(--accent); }
+.onboard p { margin-bottom: 12px; line-height: 1.5; }
+.onboard ol { padding-left: 20px; line-height: 2; }
+.onboard-error {
+  background: #f8514922;
+  color: var(--red);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  margin: 10px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.onboard-note { color: var(--yellow); font-size: 12px; }
+.onboard-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+================================================================================
+END OF FILE
+================================================================================
